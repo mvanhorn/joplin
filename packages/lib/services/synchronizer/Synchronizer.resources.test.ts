@@ -205,6 +205,45 @@ describe('Synchronizer.resources', () => {
 		expect(await Resource.resourceBlobContent(resource1_1.id, 'utf8')).toBe('1234 MOD');
 	});
 
+	it('should sync concurrent legacy resource metadata edits without blob conflicts', async () => {
+		const id = '11111111111111111111111111111111';
+		const updatedTime = 1500000000000;
+		const metadata = await Resource.serialize({ id, type_: ModelType.Resource, title: 'legacy', mime: 'text/plain', file_extension: 'txt', size: 4, created_time: updatedTime, updated_time: updatedTime });
+		await fileApi().put(`${id}.md`, metadata.replace(/^blob_updated_time:.*\n?/m, ''));
+		await fileApi().mkdir('.resource');
+		await fileApi().put(`.resource/${id}`, '1234');
+		for (const client of [1, 2]) {
+			await switchClient(client);
+			await msleep(2);
+			await synchronizerStart();
+			await resourceFetcher().startAndWait();
+			expect((await Resource.load(id)).blob_updated_time).toBe(updatedTime);
+			await Resource.save({ id, title: `client ${client}` });
+		}
+		const put = jest.spyOn(fileApi(), 'put');
+		try {
+			await synchronizerStart();
+			expect(put.mock.calls.map(call => call[0])).toContain(`${id}.md`);
+			expect(put.mock.calls.map(call => call[0])).not.toContain(`.resource/${id}`);
+		} finally {
+			put.mockRestore();
+		}
+		const remote = await Resource.unserialize(await fileApi().get(`${id}.md`));
+		expect(remote.blob_updated_time).toBe(updatedTime);
+		expect(remote.title).toBe('client 2');
+		for (const client of [1, 2]) {
+			await switchClient(client);
+			await synchronizerStart();
+			expect(await Resource.all()).toHaveLength(1);
+			expect(await Resource.load(id)).toMatchObject({ title: remote.title, blob_updated_time: updatedTime });
+			expect(await Note.all()).toHaveLength(0);
+			expect(await Folder.all()).toHaveLength(0);
+			expect(await Resource.resourceBlobContent(id, 'utf8')).toBe('1234');
+		}
+		await Resource.save({ id, title: 'subsequent edit' });
+		expect((await Resource.load(id)).blob_updated_time).toBe(updatedTime);
+	});
+
 	it('should handle resource conflicts', async () => {
 		{
 			const tempFile = tempFilePath('txt');

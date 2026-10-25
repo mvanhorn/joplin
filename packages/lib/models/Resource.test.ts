@@ -139,6 +139,25 @@ describe('models/Resource', () => {
 		expect(originalStat.size).toBe(newStat.size);
 	}));
 
+	it('should initialize blob timestamps from resource metadata', async () => {
+		const updatedTime = 1500000000000;
+		const clock = jest.spyOn(Date, 'now');
+		try {
+			for (const now of [1600000000000, 1700000000000]) {
+				clock.mockReturnValue(now);
+				for (const blobTime of [undefined, 0, updatedTime - 1000]) {
+					const resource = await Resource.save({ updated_time: updatedTime, blob_updated_time: blobTime });
+					expect(resource.blob_updated_time).toBe(blobTime || updatedTime);
+				}
+				const local = await Resource.save({});
+				expect(local.updated_time).toBe(now);
+				expect(local.blob_updated_time).toBe(now);
+			}
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
 	it('should set the blob_updated_time property if the blob is updated', (async () => {
 		const note = await Note.save({});
 		await shim.attachFileToNote(note, testImagePath);

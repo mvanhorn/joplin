@@ -683,7 +683,7 @@ export default class Resource extends BaseItem {
 			options = { ...options, autoTimestamp: false };
 			if (!resource.created_time) resource.created_time = now;
 			if (!resource.updated_time) resource.updated_time = now;
-			if (!resource.blob_updated_time) resource.blob_updated_time = now;
+			if (!resource.blob_updated_time) resource.blob_updated_time = resource.updated_time;
 		}
 
 		const output = await super.save(resource, options);
